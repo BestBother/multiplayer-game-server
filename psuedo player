@@ -7,7 +7,7 @@ client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((HOST, PORT))
 
 
-actions = ["move right", "attack enemy", "score update"]
+actions = ["dodge right", "attack enemy", " enemy defeated + 100 points"]
 
 for action in actions:
     client.sendall(action.encode())
