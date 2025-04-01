@@ -1,0 +1,17 @@
+import socket
+
+HOST = '127.0.0.1'
+PORT = 2368
+
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect((HOST, PORT))
+
+
+actions = ["move right", "attack enemy", "score update"]
+
+for action in actions:
+    client.sendall(action.encode())
+    response = client.recv(1024).decode()
+    print(f"Server response: {response}")
+
+client.close()
