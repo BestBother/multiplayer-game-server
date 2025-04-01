@@ -1,0 +1,16 @@
+import queue
+import time
+
+physics_queue = queue.Queue()
+
+def process_physics():
+    while True:
+        if not physics_queue.empty():
+            addr, action = physics_queue.get()
+            print(f"Processing movement from {addr}: {action}")
+            time.sleep(1)  
+            print(f"Completed movement for {addr}")
+
+physics_worker = threading.Thread(target=process_physics)
+physics_worker.start()
+
