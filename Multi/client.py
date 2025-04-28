@@ -1,4 +1,3 @@
-# client.py
 import pygame, socket, threading, struct
 from common import HOST, PORT, MSG_FMT, MSG_SIZE
 

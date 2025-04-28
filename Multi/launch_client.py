@@ -9,5 +9,5 @@ if __name__ == '__main__':
         print(f"Launching {i} clients...")
         clients = [Process(target=run_client) for _ in range(i)]
         for c in clients: c.start()
-        time.sleep(10)  # Let them run for 10 sec
+        time.sleep(10)  
         for c in clients: c.terminate()

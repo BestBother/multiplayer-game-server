@@ -1,64 +1,83 @@
-# server.py
 import socket
 import threading
-from multiprocessing import Process, Queue
-import struct, time
+import struct
+import pickle
 from common import HOST, PORT, MSG_FMT, MSG_SIZE
 
+WORKER_NODES = [
+    ('192.168.68.53', 9001),
+]
 
-clients = {}   
+positions = {}       
+clients   = {}     
 positions_lock = threading.Lock()
-player_tags = {}
 
-def physics_worker(task_q: Queue, result_q: Queue):
-    while True:
-        updates = task_q.get()
-        if updates is None:
-            break
-        new_positions = {}
-        for pid, (x, y, vy, jumping) in updates.items():
-            vy += 0.5  # gravity
-            y  += vy
-            # simple ground clamp at y=550
-            if y > 550:
-                y, vy, jumping = 550, 0, False
-            new_positions[pid] = (x, y, vy, jumping)
-        result_q.put(new_positions)
+def call_worker(updates):
+    global worker_index
+    host, port = WORKER_NODES[worker_index]
+    worker_index = (worker_index + 1) % len(WORKER_NODES)
+    data = pickle.dumps(updates)
+    print(f"worker", worker_index)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect((host, port))
+        sock.sendall(struct.pack('!I', len(data)) + data)
+        raw_len = sock.recv(4)
+        resp_len = struct.unpack('!I', raw_len)[0]
+        resp_payload = b''
+        while len(resp_payload) < resp_len:
+            resp_payload += sock.recv(resp_len - len(resp_payload))
+    return pickle.loads(resp_payload)
 
-def client_thread(conn, addr, pid, task_q: Queue, result_q: Queue):
+
+def client_thread(conn, addr, pid):
     global positions
     buf = b''
-    while True:
-        while len(buf) < MSG_SIZE:
-            data = conn.recv(1024)
-            if not data:
-                print(f"Disconnect: {pid}")
-                return
-            buf += data
-        data, buf = buf[:MSG_SIZE], buf[MSG_SIZE:]
-        _, x, y = struct.unpack(MSG_FMT, data)
-        # update local state
-        positions[pid] = (x, y, 0, False)
-        # send current snapshot to physics process
-        with positions_lock:
-            positions[pid] = (x, y, 0, False)
-            snapshot = positions.copy()
+    try:
+        while True:
+            while len(buf) < MSG_SIZE:
+                data = conn.recv(1024)
+                if not data:
+                    raise ConnectionResetError 
+                buf += data
 
-            task_q.put(snapshot)
-            new_state = result_q.get()
-            
-        # broadcast to all clients
-        packet = b''.join(struct.pack(MSG_FMT, p, *pos[:2]) for p, pos in new_state.items())
-        for c, _ in clients.values():
-            c.sendall(packet)
+            packet, buf = buf[:MSG_SIZE], buf[MSG_SIZE:]
+            _, x, y = struct.unpack(MSG_FMT, packet)
+
+            with positions_lock:
+                positions[pid] = (x, y, 0.0, False)
+                snapshot = positions.copy()
+
+            new_state = call_worker(snapshot)
+
+            out_packet = b''.join(
+                struct.pack(MSG_FMT, p, *pos[:2])
+                for p, pos in new_state.items()
+            )
+
+            dead_clients = []
+            for c, _ in clients.values():
+                try:
+                    c.sendall(out_packet)
+                except:
+                    dead_clients.append(c)
+
+            for dc in dead_clients:
+                for dp, (dconn, _) in list(clients.items()):
+                    if dconn == dc:
+                        del clients[dp]
+                        break
+
+    except (ConnectionResetError, BrokenPipeError, socket.error):
+        print(f"Disconnect: {pid}")
+        with positions_lock:
+            if pid in positions:
+                del positions[pid]
+            if pid in clients:
+                del clients[pid]
+        conn.close()
 
 if __name__ == '__main__':
-    task_q   = Queue()
-    result_q = Queue()
-    phys_p = Process(target=physics_worker, args=(task_q, result_q), daemon=True)
-    phys_p.start()
-
-    sock = socket.socket()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind((HOST, PORT))
     sock.listen()
     print(f"Server listening on {HOST}:{PORT}")
@@ -72,12 +91,10 @@ if __name__ == '__main__':
             print(f"Client {pid} connected from {addr}")
             threading.Thread(
                 target=client_thread,
-                args=(conn, addr, pid, task_q, result_q),
+                args=(conn, addr, pid),
                 daemon=True
             ).start()
     except KeyboardInterrupt:
         pass
     finally:
-        task_q.put(None)
-        phys_p.join()
         sock.close()
