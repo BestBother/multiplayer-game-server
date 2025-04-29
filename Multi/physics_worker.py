@@ -47,4 +47,5 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_sock:
             updates = pickle.loads(payload)
             result = physics_step(updates)
             out = pickle.dumps(result)
+            print(f"[{HOST}:{PORT}] Processed {len(updates)} players")
             conn.sendall(struct.pack('!I', len(out)) + out)

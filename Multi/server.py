@@ -6,7 +6,9 @@ from common import HOST, PORT, MSG_FMT, MSG_SIZE
 
 WORKER_NODES = [
     ('192.168.68.53', 9001),
+    ('192.168.68.53', 9002)
 ]
+worker_index = 0
 
 positions = {}       
 clients   = {}     
@@ -20,7 +22,7 @@ def call_worker(updates):
     print(f"worker", worker_index)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect((host, port))
-        sock.sendall(struct.pack('!I', len(data)) + data)
+        sock.sendall(struct.pack('! I', len(data)) + data)
         raw_len = sock.recv(4)
         resp_len = struct.unpack('!I', raw_len)[0]
         resp_payload = b''
